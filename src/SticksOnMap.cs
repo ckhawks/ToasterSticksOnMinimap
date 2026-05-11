@@ -190,6 +190,19 @@ public static class SticksOnMap
     }
 
     /// <summary>
+    /// Returns TRL's minimap refresh rate (default 60 if TRL not loaded).
+    /// </summary>
+    private static int GetTRLRefreshRate()
+    {
+        if (_trlApiType == null) return 60;
+        try
+        {
+            return (int)_trlApiType.GetProperty("MinimapRefreshRate").GetValue(null);
+        }
+        catch { return 60; }
+    }
+
+    /// <summary>
     /// Returns TRL's minimap puck scale setting (default 1.0 if TRL not loaded).
     /// </summary>
     private static float GetTRLPuckScale()
@@ -317,6 +330,9 @@ public static class SticksOnMap
 
     // ─── Minimap Update Patch ─────────────────────────────────────────
 
+    // Accumulator to match our update rate to the configured minimap refresh rate
+    private static float updateAccumulator;
+
     [HarmonyPatch(typeof(UIMinimap), "Update")]
     public static class UIMinimapUpdatePatch
     {
@@ -324,6 +340,13 @@ public static class SticksOnMap
         public static void Postfix(UIMinimap __instance)
         {
             EnsureTRLIntegration();
+
+            // Rate-limit to match TRL's minimap refresh rate setting
+            updateAccumulator += Time.deltaTime;
+            int refreshRate = GetTRLRefreshRate();
+            if (refreshRate > 0 && updateAccumulator < 1f / refreshRate)
+                return;
+            updateAccumulator = 0f;
 
             // Toggle side views with F7 (only if side views feature is enabled)
             if (EnableSideViews)

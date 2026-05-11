@@ -6,7 +6,7 @@ using UnityEngine.Rendering;
 
 namespace ToasterSticksOnMap;
 
-public class Plugin : IPuckMod
+public class Plugin : IPuckPlugin
 {
     public static string MOD_NAME = "ToasterSticksOnMap";
     public static string MOD_VERSION = "1.0.0";
