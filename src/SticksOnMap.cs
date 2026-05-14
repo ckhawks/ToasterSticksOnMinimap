@@ -4,7 +4,6 @@ using System.Linq;
 using System.Reflection;
 using HarmonyLib;
 using UnityEngine;
-using UnityEngine.InputSystem;
 using UnityEngine.UIElements;
 
 namespace ToasterSticksOnMap;
@@ -13,30 +12,22 @@ public static class SticksOnMap
 {
     private static Dictionary<Stick, VisualElement> stickVisualElementMap = new Dictionary<Stick, VisualElement>();
 
-    // Stick height range for opacity/scale interpolation
-    private const float StickMinHeight = 0f;
-    private const float StickMaxHeight = 3f;
+    // Scale ranges remain hardcoded - they're shape constants, not user knobs.
     private const float StickMaxScale = 1.0f;
-    private const float StickMinScale = 0.5f;
-
-    // Puck height range (higher max since pucks fly more)
-    private const float PuckMinHeight = 0f;
-    private const float PuckMaxHeight = 8f;
     private const float PuckMaxScale = 1.0f;
-    private const float PuckMinScale = 0.6f;
 
-    // ── Feature toggles (flip these to enable/disable) ──
-    private static readonly bool EnableSideViews = true;
-    private static readonly bool EnablePuckHeightOpacity = true;
-    private static readonly bool EnableFogOfWar = false;
+    // Tunables — read from config. See ModSettings.cs.
+    private static float StickMaxHeight => Plugin.modSettings.stickMaxHeight;
+    private static float StickMinScale => Plugin.modSettings.stickMinScale;
+    private static float PuckMaxHeight => Plugin.modSettings.puckMaxHeight;
+    private static float PuckMinScale => Plugin.modSettings.puckMinScale;
 
-    // Fog of war config
-    private const float FogFovDegrees = 120f;
-    private const float FogHiddenOpacity = 0.0f;  // opacity for elements outside the cone
+    private static bool EnableSideViews => Plugin.modSettings.enableSideViews;
+    private static bool EnablePuckHeightOpacity => Plugin.modSettings.enablePuckHeightOpacity;
+    private static bool EnableFogOfWar => Plugin.modSettings.enableFogOfWar;
 
-    // Runtime toggles
-    private static bool sideViewsVisible = false;
-    private static bool fogOfWarVisible = true;
+    private static float FogFovDegrees => Plugin.modSettings.fogFovDegrees;
+    private static float FogHiddenOpacity => Plugin.modSettings.fogHiddenOpacity;
 
     // Side view panel references
     private static VisualElement sideViewLeft;   // long-ways: shares vertical axis (Z) with minimap, horizontal = height
@@ -263,7 +254,7 @@ public static class SticksOnMap
         sideViewLeft.style.marginRight = SideViewGap;
         sideViewLeft.style.backgroundColor = new StyleColor(new Color(0, 0, 0, 0.4f));
         sideViewLeft.style.overflow = Overflow.Hidden;
-        sideViewLeft.style.display = sideViewsVisible ? DisplayStyle.Flex : DisplayStyle.None;
+        sideViewLeft.style.display = DisplayStyle.Flex;
         minimapElement.Add(sideViewLeft);
 
         // Bottom panel (short-ways: shares horizontal axis with minimap, vertical = height)
@@ -277,7 +268,7 @@ public static class SticksOnMap
         sideViewBottom.style.marginTop = SideViewGap;
         sideViewBottom.style.backgroundColor = new StyleColor(new Color(0, 0, 0, 0.4f));
         sideViewBottom.style.overflow = Overflow.Hidden;
-        sideViewBottom.style.display = sideViewsVisible ? DisplayStyle.Flex : DisplayStyle.None;
+        sideViewBottom.style.display = DisplayStyle.Flex;
         minimapElement.Add(sideViewBottom);
 
         sideViewsInitialized = true;
@@ -348,20 +339,8 @@ public static class SticksOnMap
                 return;
             updateAccumulator = 0f;
 
-            // Toggle side views with F7 (only if side views feature is enabled)
             if (EnableSideViews)
-            {
-                if (Keyboard.current != null && Keyboard.current.f7Key.wasPressedThisFrame)
-                {
-                    sideViewsVisible = !sideViewsVisible;
-                    if (sideViewLeft != null)
-                        sideViewLeft.style.display = sideViewsVisible ? DisplayStyle.Flex : DisplayStyle.None;
-                    if (sideViewBottom != null)
-                        sideViewBottom.style.display = sideViewsVisible ? DisplayStyle.Flex : DisplayStyle.None;
-                }
-
                 EnsureSideViewsInitialized(__instance);
-            }
 
             VisualElement content = (VisualElement)_contentField.GetValue(__instance);
             float contentWidth = content.resolvedStyle.width;
@@ -421,12 +400,7 @@ public static class SticksOnMap
             // ── Fog of War: hide elements outside view cone ──
             if (EnableFogOfWar)
             {
-                if (Keyboard.current != null && Keyboard.current.f8Key.wasPressedThisFrame)
-                    fogOfWarVisible = !fogOfWarVisible;
-
-                if (fogOfWarVisible)
-                {
-                    Player localPlayer = MonoBehaviourSingleton<PlayerManager>.Instance.GetLocalPlayer();
+                Player localPlayer = MonoBehaviourSingleton<PlayerManager>.Instance.GetLocalPlayer();
                     if (localPlayer != null && localPlayer.PlayerBody != null && localPlayer.PlayerInput != null)
                     {
                         PlayerBody localBody = localPlayer.PlayerBody;
@@ -499,13 +473,12 @@ public static class SticksOnMap
                             // Combine with existing height-based opacity
                             float heightScale = GetScaleFromHeight(bladeHandle.transform.position.y, StickMaxHeight, StickMaxScale, StickMinScale);
                             ve.style.opacity = Mathf.Min(fogOpacity, heightScale);
-                        }
                     }
                 }
             }
 
             // ── Update side view dots (players + pucks) ──
-            if (!EnableSideViews || !sideViewsVisible || sideViewLeft == null) return;
+            if (!EnableSideViews || sideViewLeft == null) return;
 
             // Players (using playerBodyVisualElementMap like vanilla)
             foreach (var kvp in playerMap)
@@ -612,6 +585,7 @@ public static class SticksOnMap
         public static void Postfix(UIMinimap __instance, PlayerBody playerBody)
         {
             if (!playerBody) return;
+            if (!EnableSideViews) return;
             EnsureSideViewsInitialized(__instance);
 
             Player player = playerBody.Player;
@@ -661,6 +635,7 @@ public static class SticksOnMap
         public static void Postfix(UIMinimap __instance, Puck puck)
         {
             if (!puck) return;
+            if (!EnableSideViews) return;
             EnsureSideViewsInitialized(__instance);
 
             if (sideViewLeft != null && !puckSideLeftMap.ContainsKey(puck))

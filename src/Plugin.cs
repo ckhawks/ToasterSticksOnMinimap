@@ -15,7 +15,9 @@ public class Plugin : IPuckPlugin
     static readonly Harmony harmony = new Harmony(MOD_GUID);
 
     private static readonly bool DEBUG_MODE = false;
-    
+
+    public static ModSettings modSettings;
+
     public bool OnEnable()
     {
         Plugin.Log($"Enabling...");
@@ -29,6 +31,7 @@ public class Plugin : IPuckPlugin
             else
             {
                 Plugin.Log("Environment: client.");
+                modSettings = ModSettings.Load();
                 Plugin.Log("Patching methods...");
                 harmony.PatchAll();
                 Plugin.Log($"All patched! Patched methods:");
