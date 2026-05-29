@@ -18,6 +18,14 @@ public class ModSettings
     public float fogFovDegrees { get; set; } = 120f;
     public float fogHiddenOpacity { get; set; } = 0f;
 
+    public bool enableFallenOpacity { get; set; } = true;
+    public float fallenOpacity { get; set; } = 0.4f;
+    // Hysteresis on the body's "upwardness" (transform.up · world up, 1 = fully upright).
+    // Enter the fallen state below the enter value; only leave it above the (higher) exit value.
+    // This replaces the game's instantaneous IsSideways (<0.2), which flickered for ~0.2s.
+    public float fallenEnterUpwardness { get; set; } = 0.5f;
+    public float fallenExitUpwardness { get; set; } = 0.75f;
+
     static string ConfigurationFileName = $"{Plugin.MOD_NAME}.json";
 
     public static ModSettings Load()

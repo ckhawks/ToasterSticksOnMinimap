@@ -29,6 +29,32 @@ public static class SticksOnMap
     private static float FogFovDegrees => Plugin.modSettings.fogFovDegrees;
     private static float FogHiddenOpacity => Plugin.modSettings.fogHiddenOpacity;
 
+    private static bool EnableFallenOpacity => Plugin.modSettings.enableFallenOpacity;
+    private static float FallenOpacity => Plugin.modSettings.fallenOpacity;
+    private static float FallenEnterUpwardness => Plugin.modSettings.fallenEnterUpwardness;
+    private static float FallenExitUpwardness => Plugin.modSettings.fallenExitUpwardness;
+
+    // Per-body hysteretic "fallen" state, keyed like the vanilla minimap (by PlayerBody).
+    private static Dictionary<PlayerBody, bool> bodyDownState = new Dictionary<PlayerBody, bool>();
+
+    /// <summary>
+    /// Whether a player body should be treated as fallen for opacity purposes.
+    /// PlayerBody.IsSideways (Upwardness &lt; 0.2) and HasFallen are unusable here: the former is
+    /// an instantaneous threshold that the active KeepUpright righting only dips under for a
+    /// fraction of a second (the ~0.2s flicker), and HasFallen is set server-side only and never
+    /// synced. We instead read the synced transform's upwardness directly and apply hysteresis:
+    /// enter the fallen state below FallenEnterUpwardness, leave it only above FallenExitUpwardness.
+    /// </summary>
+    private static bool IsBodyDown(PlayerBody body)
+    {
+        if (!body) return false;
+        float upwardness = Vector3.Dot(body.transform.up, Vector3.up);
+        bool wasDown = bodyDownState.TryGetValue(body, out var d) && d;
+        bool isDown = wasDown ? upwardness < FallenExitUpwardness : upwardness < FallenEnterUpwardness;
+        bodyDownState[body] = isDown;
+        return isDown;
+    }
+
     // Side view panel references
     private static VisualElement sideViewLeft;   // long-ways: shares vertical axis (Z) with minimap, horizontal = height
     private static VisualElement sideViewBottom;  // short-ways: shares horizontal axis (X) with minimap, vertical = height
@@ -372,12 +398,29 @@ public static class SticksOnMap
 
                 float scale = GetScaleFromHeight(worldPos.y, StickMaxHeight, StickMaxScale, StickMinScale);
                 stickVE.style.scale = new StyleScale(new Scale(new Vector2(scale, 1)));
-                stickVE.style.opacity = scale;
+                float stickOpacity = scale;
+                if (EnableFallenOpacity && stick.Player && IsBodyDown(stick.Player.PlayerBody))
+                    stickOpacity *= FallenOpacity;
+                stickVE.style.opacity = stickOpacity;
             }
 
             // ── Shared lookups ──
             var puckMap = (Dictionary<Puck, VisualElement>)_puckVisualElementMapField.GetValue(__instance);
             var playerMap = (Dictionary<PlayerBody, VisualElement>)_playerBodyVisualElementMapField.GetValue(__instance);
+
+            // ── Fade player icons when fallen ──
+            if (EnableFallenOpacity)
+            {
+                foreach (var kvp in playerMap)
+                {
+                    PlayerBody body = kvp.Key;
+                    if (!body) continue;
+                    float op = IsBodyDown(body) ? FallenOpacity : 1f;
+                    kvp.Value.style.opacity = op;
+                    if (playerSideLeftMap.TryGetValue(body, out var ldot)) ldot.style.opacity = op;
+                    if (playerSideBottomMap.TryGetValue(body, out var bdot)) bdot.style.opacity = op;
+                }
+            }
 
             // ── Update puck height-based opacity + shrink ──
             if (EnablePuckHeightOpacity)
@@ -472,7 +515,10 @@ public static class SticksOnMap
 
                             // Combine with existing height-based opacity
                             float heightScale = GetScaleFromHeight(bladeHandle.transform.position.y, StickMaxHeight, StickMaxScale, StickMinScale);
-                            ve.style.opacity = Mathf.Min(fogOpacity, heightScale);
+                            float combined = Mathf.Min(fogOpacity, heightScale);
+                            if (EnableFallenOpacity && stick.Player && IsBodyDown(stick.Player.PlayerBody))
+                                combined *= FallenOpacity;
+                            ve.style.opacity = combined;
                     }
                 }
             }
@@ -613,6 +659,7 @@ public static class SticksOnMap
         public static void Prefix(PlayerBody playerBody)
         {
             if (!playerBody) return;
+            bodyDownState.Remove(playerBody);
             if (playerSideLeftMap.TryGetValue(playerBody, out var leftDot))
             {
                 leftDot.RemoveFromHierarchy();
